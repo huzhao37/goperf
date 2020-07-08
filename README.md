@@ -131,9 +131,8 @@ pwd:socks5代理密码
 test=1，即测试吞吐量时，concurrency尽量不要太大，默认值即可
 
 ###效果
+![并发测试](https://images.gitee.com/uploads/images/2020/0708/175505_9c1b6167_671199.png "concurrency.png")
 
-![Image text](https://gitee.com/gbat/goperf/blob/master/static/concurrency.png)
-
-![Image text](https://gitee.com/gbat/goperf/blob/master/static/iops.png)
+![吞吐量测试](https://images.gitee.com/uploads/images/2020/0708/175526_6d292e68_671199.png "iops.png")
 
 
