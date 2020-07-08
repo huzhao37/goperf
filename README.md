@@ -132,6 +132,8 @@ test=1，即测试吞吐量时，concurrency尽量不要太大，默认值即可
 
 ###效果
 
-![image](https://gitee.com/gbat/goperf/blob/master/static/concurrency.png)
+![Image text](https://gitee.com/gbat/goperf/blob/master/static/concurrency.png)
 
-![image](https://gitee.com/gbat/goperf/blob/master/static/iops.png)
+![Image text](https://gitee.com/gbat/goperf/blob/master/static/iops.png)
+
+
