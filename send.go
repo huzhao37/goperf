@@ -1,20 +1,16 @@
-package main
+package goperf
 
 import (
 	"crypto/rand"
 	"encoding/binary"
-	"errors"
 	"flag"
 	"fmt"
 	"math"
 	"math/big"
 	"net"
-	"os"
-	"os/signal"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"golang.org/x/net/proxy"
@@ -23,20 +19,14 @@ import (
 var (
 	fProxyPorts  = flag.String("proxyports", "10000", "Proxy ports array for sending traffic to(10000,10001,10002).")
 	fDestPort    = flag.Int("destport", 10001, "Dest port.")
-	fType        = flag.String("type", "direct", "Proxy type of the target, either 'direct' or 'socks'.")
+	socks        = flag.Bool("socks", false, "Proxy type of the target, either 'direct' or 'socks'.")
 	fAmount      = flag.Int("amount", 1, "Amount of traffic to send, in GB.")
 	fConcurrency = flag.Int("concurrency", 1, "Number of concurrect connections for benchmark.")
 
-	fProxyIp      = flag.String("proxyip", "10.2.155.242", "Proxy IP to listen on.")
-	fDestIps      = flag.String("destips", "127.0.0.1", "Dest IPs to Access.")
-	testType      = flag.Int("test", 0, "test type,ex:0 is maxcon,1 is IOPS.")
-	proxyPortType = flag.Int("porttype", 0, "test type,ex:0 is single proxy port,1 is multi proxy port.")
-	keepAlive     = flag.Bool("k", true, "is keep alive")
+	fProxyIp = flag.String("proxyip", "10.2.155.242", "Proxy IP to listen on.")
+	fDestIps = flag.String("destips", "127.0.0.1", "Dest IPs to Access.")
 
-	flocalIp   = flag.String("ip", "127.0.0.1", "local IP to bind.")
-	flocalPort = flag.String("port", "9980", "local PORT to bind.")
-
-	buffer = flag.Int64("b", 500, "send bytes,unit: B.")
+	proxyPortType = flag.Bool("multiport", false, "test type,default is single proxy port,true multi proxy port.")
 
 	user = flag.String("user", "admin", "socks5 proxy user.")
 	pwd  = flag.String("pwd", "123456", "socks5 proxy pwd.")
@@ -45,15 +35,47 @@ var (
 func makeConnection() ([]net.Conn, error) {
 	destIps := strings.Split(*fDestIps, ",")
 	conns := make([]net.Conn, 0, 3)
-	switch *fType {
-	case "direct":
+	if *socks {
+		var err error
+		proxyPort := 10000
+		proxyPorts := strings.Split(*fProxyPorts, ",")
+		if *proxyPortType {
+			proxyPort, err = strconv.Atoi(proxyPorts[0])
+			if err != nil {
+				panic(err)
+			}
+		} else {
+			min, err := strconv.Atoi(proxyPorts[0])
+			if err != nil {
+				panic(err)
+			}
+			max, err := strconv.Atoi(proxyPorts[len(proxyPorts)-1])
+			if err != nil {
+				panic(err)
+			}
+			proxyPort = int(RangeRand(int64(min), int64(max)))
+		}
+		dialer, err := proxy.SOCKS5("tcp4", fmt.Sprintf("%s:%d", *fProxyIp, proxyPort), &proxy.Auth{User: *user, Password: *pwd}, proxy.Direct)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range destIps {
+			destIp := item
+			conn, err := dialer.Dial("tcp4", fmt.Sprintf("%s:%d", destIp, *fDestPort))
+			if err != nil {
+				panic(err)
+			}
+			conns = append(conns, conn)
+		}
+		return conns, nil
+	} else {
 		lAddr := &net.TCPAddr{}
 		var err error
 		//本地地址  ipaddr是本地外网IP
-		if *testType == 0 {
+		if !*testType {
 			lAddr = nil
 		} else {
-			lAddr, err = net.ResolveTCPAddr("tcp4", *flocalIp+":"+*flocalPort)
+			lAddr, err = net.ResolveTCPAddr("tcp4", *flocalIp+":"+strconv.Itoa(*flocalPort))
 			if err != nil {
 				panic(err)
 			}
@@ -72,43 +94,6 @@ func makeConnection() ([]net.Conn, error) {
 			conns = append(conns, conn)
 		}
 		return conns, nil
-	case "socks":
-		var err error
-		proxyPort := 10000
-		proxyPorts := strings.Split(*fProxyPorts, ",")
-		if *proxyPortType == 0 {
-			proxyPort, err = strconv.Atoi(proxyPorts[0])
-			if err != nil {
-				panic(err)
-			}
-		}
-		if *proxyPortType == 1 {
-			min, err := strconv.Atoi(proxyPorts[0])
-			if err != nil {
-				panic(err)
-			}
-			max, err := strconv.Atoi(proxyPorts[len(proxyPorts)-1])
-			if err != nil {
-				panic(err)
-			}
-			proxyPort = int(RangeRand(int64(min), int64(max)))
-		}
-		//port:=int(RangeRand(11000,11004))
-		dialer, err := proxy.SOCKS5("tcp4", fmt.Sprintf("%s:%d", *fProxyIp, proxyPort), &proxy.Auth{User: *user, Password: *pwd}, proxy.Direct)
-		if err != nil {
-			return nil, err
-		}
-		for _, item := range destIps {
-			destIp := item
-			conn, err := dialer.Dial("tcp4", fmt.Sprintf("%s:%d", destIp, *fDestPort))
-			if err != nil {
-				panic(err)
-			}
-			conns = append(conns, conn)
-		}
-		return conns, nil
-	default:
-		return nil, errors.New("Unknown proxy type: " + *fType)
 	}
 }
 
@@ -130,28 +115,14 @@ func RangeRand(min, max int64) int64 {
 	}
 }
 
-func main() {
-	flag.Parse()
+func Client() {
 
-	if *testType == 0 {
+	if !*testType {
 		Concurrency()
 	}
-	if *testType == 1 {
+	if *testType {
 		IOPS()
 	}
-	sigs := make(chan os.Signal, 1)
-	done := make(chan bool, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-
-	go func() {
-		sig := <-sigs
-		fmt.Println()
-		fmt.Println(sig)
-		done <- true
-	}()
-	fmt.Println("awaiting signal")
-	<-done
-	fmt.Println("exiting")
 }
 
 //并发

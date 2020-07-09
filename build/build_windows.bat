@@ -7,9 +7,7 @@ SET GOOS=windows
 
 SET GOARCH=amd64
 
-go build -o ../build/receiver.exe ../receiver/main.go
-
-go build -o ../build/send.exe ../send/main.go
+go build -o ../build/goperf.exe ../cmd/main.go
 
 
 pause
